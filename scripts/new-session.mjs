@@ -7,7 +7,7 @@
 //   npm run new-session -- m01-fundamentals s01-jsx --tailwind   (override a default flag)
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const [, , moduleName, sessionName, ...extraFlags] = process.argv;
@@ -50,6 +50,34 @@ console.log(`Scaffolding ${targetDir}...`);
 execSync(`npx --yes create-next-app@latest ${targetDir} ${flags.join(" ")}`, {
   stdio: "inherit",
 });
+
+// create-next-app's Tailwind rule ("*.css" -> as "*.css") also matches
+// *.module.css files and breaks CSS Modules (styles.x === undefined).
+// Exclude CSS Modules from that rule.
+const useTailwind = flags.lastIndexOf("--tailwind") > flags.lastIndexOf("--no-tailwind");
+const configPath = path.join(targetDir, "next.config.ts");
+
+if (useTailwind && existsSync(configPath)) {
+  const config = readFileSync(configPath, "utf8");
+  const cssRule = /(["']\*\.css["']\s*:\s*\{\n)(\s*)/;
+
+  if (config.includes("module\\.css")) {
+    // already patched
+  } else if (cssRule.test(config)) {
+    const patched = config.replace(
+      cssRule,
+      `$1$2condition: { not: { path: /\\.module\\.css$/ } },\n$2`
+    );
+    writeFileSync(configPath, patched);
+    console.log("Patched next.config.ts: CSS Modules excluded from the Tailwind loader.");
+  } else {
+    console.warn(
+      "WARNING: could not find the \"*.css\" rule in next.config.ts. " +
+      "Add `condition: { not: { path: /\\.module\\.css$/ } },` to it manually."
+    );
+  }
+}
+
 
 console.log(`\nDone. Next steps:`);
 console.log(`  1. npm install                 (run once, from the repo root)`);
